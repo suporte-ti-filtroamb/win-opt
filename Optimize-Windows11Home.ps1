@@ -54,21 +54,32 @@ if (Get-Service -Name "SysMain" -ErrorAction SilentlyContinue) {
 
 # 5. Forçar Plano de Energia de Alto Desempenho
 Write-Host "[4/6] Configurando Energia para Alto Desempenho..." -ForegroundColor Yellow
-# Garante que o esquema de Alto Desempenho existe (mesmo se ocultado no Win 11 Home)
-powercfg -duplicatescheme 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c | Out-Null
-powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c -ErrorAction SilentlyContinue
+# Executa os comandos redirecionando erros para o null, já que alguns hardwares (como laptops com Modern Standby S0) bloqueiam planos personalizados
+try {
+    & powercfg -duplicatescheme 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c >$null 2>&1
+    & powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c >$null 2>&1
+} catch {
+    # Ignora silenciosamente se o hardware não der suporte
+}
 
-# 6. Limpeza Geral de Arquivos Temporários, Cache e DNS
+# 6. Limpeza Geral de Arquivos Temporários, Cache e DNS (Silencioso e à prova de falhas)
 Write-Host "[5/6] Executando Limpeza Geral de Temporários..." -ForegroundColor Yellow
 $TempPaths = @(
-    "$env:TEMP\*",
-    "$env:WINDIR\Temp\*",
-    "$env:WINDIR\Prefetch\*",
-    "$env:WINDIR\SoftwareDistribution\Download\*"
+    "$env:TEMP",
+    "$env:WINDIR\Temp",
+    "$env:WINDIR\Prefetch",
+    "$env:WINDIR\SoftwareDistribution\Download"
 )
 foreach ($folder in $TempPaths) {
-    if (Test-Path (Split-Path $folder)) {
-        Remove-Item -Path $folder -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $folder) {
+        # Obtém itens recursivamente e remove individualmente num bloco try/catch para evitar erros se um arquivo sumir no meio do processo
+        Get-ChildItem -Path $folder -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            } catch {
+                # Ignora silenciosamente arquivos bloqueados ou já deletados
+            }
+        }
     }
 }
 Clear-RecycleBin -Force -ErrorAction SilentlyContinue
